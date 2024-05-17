@@ -1,0 +1,10 @@
+from ultralytics import YOLO
+
+data = "./datasets-config/hsh_first.yaml"
+model = YOLO('../yolo_models/yolov8m.pt')
+
+args = {"data": data, "epochs": 300, "project": "yolov8-hsh",
+        "imgsz": 1280, "name": "yolov8m", 'batch': 6}
+results = model.train(**args)
+
+
