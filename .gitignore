@@ -1,3 +1,4 @@
 *.pt
 /export/*.pkl
 /export/*.jpg
+__pycache__/
