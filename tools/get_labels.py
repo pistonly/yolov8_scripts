@@ -9,7 +9,7 @@ data = {"path": "/data/silu/dataset_4k",
         "test": "/data/silu/dataset_4k/images/test",
         "names": range(80)
         }
-split = "val"
+split = "train"
 yolo_ds = YOLODataset(data=data, img_path=data[split])
 label_set_all = set({})
 for l in yolo_ds.labels:
@@ -46,13 +46,15 @@ for l in yolo_ds.labels:
             xywhn = l['bboxes'][i]
             x0, y0, x1, y1 = xywhn2xyxy(xywhn, h=l['shape'][0], w=l['shape'][1])
             roi = img[y0:y1, x0:x1]
-            roi_images[c].append(roi)
+            min_size = min(y1 - y0, x1 - x0)
+            if min_size > 50:
+                roi_images[c].append(roi)
             if len(roi_images[c]) >= 20:
                 l_uncompleted.remove(c)
     if not len(l_uncompleted):
         break
 
-result_dir = Path(f"./results/{split}")
+result_dir = Path(f"./results/{split}_big")
 result_dir.mkdir(parents=True, exist_ok=True)
 
 for l, images in roi_images.items():

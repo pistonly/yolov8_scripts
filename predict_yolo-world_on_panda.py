@@ -10,9 +10,8 @@ models = ["yolov8l-worldv2"]
 for m in models:
     model = YOLOWorld(f'../yolo_models/{m}.pt')
 
-    # args = {"data": "VisDrone.yaml", "project": "yolov8-visdrone",
-    #         "device": "0", "batch": 1, 'augment': False, 'imgsz': 2016, 'name': 'val-yolov8l-640train-c'}
-    args = {"device": "0", "project": "yolo-world_on_panda", "name": f"predict-panda-{m}-1_label_baby_carriage-",
-            "batch": 1, "imgsz": 1280, "split": "train", "source": "/home/liuyang/datasets/PANDA/YOLO_1280/train.txt", "save": True}
-    model.set_classes(["baby carriage"])
+    args = {"device": "0", "project": "results/yolo-world_on_panda", "name": f"predict-panda-{m}-1_label_baby_carriage-prompt_two_wheel_carriage",
+            "batch": 1, "imgsz": 1280, "split": "train", "source": "/home/liuyang/datasets/PANDA/YOLO/train_one_label_1280/train.txt",
+            "save": True}
+    model.set_classes(["baby carriage", "two-wheel carriage"])
     model.predict(**args)

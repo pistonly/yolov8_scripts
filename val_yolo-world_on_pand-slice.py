@@ -1,4 +1,3 @@
-from ultralytics import YOLOWorld
 from slice_yolo.slice_models import YOLOWorldSlice
 
 
