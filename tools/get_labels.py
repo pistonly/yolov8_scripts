@@ -2,15 +2,22 @@ from ultralytics.data import YOLODataset
 import cv2
 import numpy as np
 from pathlib import Path
+import yaml
 
-data = {"path": "/data/silu/dataset_4k",
-        "train": "/data/silu/dataset_4k/images/train",
-        "val": "/data/silu/dataset_4k/images/val",
-        "test": "/data/silu/dataset_4k/images/test",
-        "names": range(80)
-        }
+data = "../datasets-config/panda_one_label_gega.yaml"
 split = "train"
-yolo_ds = YOLODataset(data=data, img_path=data[split])
+
+with open(data) as d_f:
+    data_dict = yaml.safe_load(d_f)
+
+dataset_name = Path(data).name
+min_size = 0
+output_dir = Path(f"./results/{dataset_name}")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+data_args = {"img_path": str(Path(data_dict['path']) / data_dict[split]),
+             "data": data_dict}
+yolo_ds = YOLODataset(**data_args)
 label_set_all = set({})
 for l in yolo_ds.labels:
     label_set = set(l['cls'].flatten())
@@ -46,18 +53,16 @@ for l in yolo_ds.labels:
             xywhn = l['bboxes'][i]
             x0, y0, x1, y1 = xywhn2xyxy(xywhn, h=l['shape'][0], w=l['shape'][1])
             roi = img[y0:y1, x0:x1]
-            min_size = min(y1 - y0, x1 - x0)
-            if min_size > 50:
-                roi_images[c].append(roi)
-            if len(roi_images[c]) >= 20:
-                l_uncompleted.remove(c)
+            _min_size = min(y1 - y0, x1 - x0)
+            if _min_size > min_size:
+                roi_images[c].append([])
+                cv2.imwrite(str(output_dir / f"label_{c}_img_{len(roi_images[c])}.jpg"), roi)
+            # if len(roi_images[c]) >= 20:
+            #     l_uncompleted.remove(c)
     if not len(l_uncompleted):
         break
 
-result_dir = Path(f"./results/{split}_big")
-result_dir.mkdir(parents=True, exist_ok=True)
-
-for l, images in roi_images.items():
-    for i, img in enumerate(images):
-        cv2.imwrite(str(result_dir / f"label_{l}_img_{i}.jpg"), img)
+# for l, images in roi_images.items():
+#     for i, img in enumerate(images):
+#         cv2.imwrite(str(output_dir / f"label_{l}_img_{i}.jpg"), img)
 
