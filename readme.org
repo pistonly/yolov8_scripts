@@ -1,0 +1,22 @@
+* slide window predict/validate
+./slice_yolo
+
+
+** features
+
+*** TODO slice + global pictures
+:LOGBOOK:
+- State "TODO"       from              [2024-05-31 五 16:58]
+:END:
+
+*** TODO predict
+:LOGBOOK:
+- State "TODO"       from              [2024-05-31 五 16:59]
+:END:
+
+*** validate
+
+* tools
+
+** crop labeled ROIs
+./tools/get_labels.py
