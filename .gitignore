@@ -2,3 +2,4 @@
 /export/*.pkl
 /export/*.jpg
 __pycache__/
+/runs*

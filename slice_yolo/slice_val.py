@@ -8,6 +8,7 @@ from ultralytics.utils.ops import Profile
 import torch
 import json
 from .utils import crop_images
+import numpy as np
 
 
 class SliceDetectionValidator(yolo.detect.DetectionValidator):
@@ -77,42 +78,65 @@ class SliceDetectionValidator(yolo.detect.DetectionValidator):
         bar = TQDM(self.dataloader, desc=self.get_desc(), total=len(self.dataloader))
         self.init_metrics(de_parallel(model))
         self.jdict = []  # empty before each val
-        for batch_i, batch in enumerate(bar):
-            self.run_callbacks("on_val_batch_start")
-            self.batch_i = batch_i
-            # Preprocess
-            with dt[0]:
-                batch = self.preprocess(batch)
 
-            # Inference
-            with dt[1]:
-                offsets, img_slices = crop_images(batch['img'], (imgsz, imgsz), step=0.9)
-                if batch_i == 0:
-                    LOGGER.info(f"slice num: {len(img_slices)}, slice size: {imgsz}")
+        # #################### debug ####################
+        import psutil
+        import os
 
-                preds_all = []
-                for offset_i, img_i in zip(offsets, img_slices):
-                    preds_i = model(img_i, augment=augment)[0]
-                    preds_i[:, :2, :] += torch.tensor([[[offset_i[1]], [offset_i[0]]]], device=self.device)
-                    preds_all.append(preds_i)
-                preds = torch.cat(preds_all, dim=-1)
-                # preds = model(batch["img"], augment=augment)
+        process = psutil.Process(os.getpid())
+        def print_mem_info(process, message="mem"):
+            mem_info = process.memory_info()
+            print("")
+            print(message)
+            print(f"RSS: {mem_info.rss / (1024 ** 2):.2f} MB")  # 以MB为单位显示
+            print(f"VMS: {mem_info.vms / (1024 ** 2):.2f} MB")  # 以MB为单位显示
+        print_mem_info(process)
+        # #################### end debug ####################
+        with torch.no_grad():
+            for batch_i, batch in enumerate(bar):
+                print_mem_info(process, "batch_i start:")
+                self.run_callbacks("on_val_batch_start")
+                self.batch_i = batch_i
+                # print(f"{batch['im_file']}: {batch['img'].shape}")
+                # Preprocess
+                with dt[0]:
+                    print_mem_info(process, "before preprocess:")
+                    batch = self.preprocess(batch, device="cpu")
+                    print_mem_info(process, "after preprocess:")
 
-            # Loss
-            with dt[2]:
-                if self.training:
-                    raise RuntimeError("slice training method is not supported")
+                # Inference
+                with dt[1]:
+                    # if batch_i == 0:
+                    #     LOGGER.info(f"slice num: {len(img_slices)}, slice size: {imgsz}")
 
-            # Postprocess
-            with dt[3]:
-                preds = self.postprocess(preds)
+                    preds_all = []
+                    print_mem_info(process, "before inference:")
+                    for offset_i, img_i in self.crop_image_batch(batch, imgsz, step=0.9, batch_size=32):
+                        preds_i = model(img_i, augment=augment)[0]
+                        preds_i[:, :2, :] += offset_i
+                        preds_all.append(torch.cat(tuple(preds_i), dim=-1))
+                    preds = torch.cat(preds_all, dim=-1)
+                    preds = preds.unsqueeze(0)
+                    # preds = model(batch["img"], augment=augment)
+                    print_mem_info(process, "after inference:")
+                # Loss
+                with dt[2]:
+                    if self.training:
+                        raise RuntimeError("slice training method is not supported")
 
-            self.update_metrics(preds, batch)
-            if self.args.plots and batch_i < 3:
-                self.plot_val_samples(batch, batch_i)
-                self.plot_predictions(batch, preds, batch_i)
+                # Postprocess
+                with dt[3]:
+                    preds = self.postprocess(preds)
+                    print_mem_info(process, "after postprocess:")
 
-            self.run_callbacks("on_val_batch_end")
+                self.update_metrics(preds, batch)
+                if self.args.plots and batch_i < 0:
+                    self.plot_val_samples(batch, batch_i)
+                    self.plot_predictions(batch, preds, batch_i)
+
+                self.run_callbacks("on_val_batch_end")
+                print_mem_info(process, "after metrics:")
+                del batch
         stats = self.get_stats()
         self.check_stats(stats)
         self.speed = dict(zip(self.speed.keys(), (x.t / len(self.dataloader.dataset) * 1e3 for x in dt)))
@@ -136,5 +160,47 @@ class SliceDetectionValidator(yolo.detect.DetectionValidator):
             if self.args.plots or self.args.save_json:
                 LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}")
             return stats
+
+    def preprocess(self, batch, device=None):
+        """Preprocesses batch of images for YOLO training."""
+        device = self.device if device is None else device
+        batch["img"] = batch["img"].to(device, non_blocking=True)
+        # batch["img"] = (batch["img"].half() if self.args.half else batch["img"].float()) / 255
+
+        for k in ["batch_idx", "cls", "bboxes"]:
+            batch[k] = batch[k].to(self.device)
+
+        if self.args.save_hybrid:
+            height, width = batch["img"].shape[2:]
+            nb = len(batch["img"])
+            bboxes = batch["bboxes"] * torch.tensor((width, height, width, height), device=self.device)
+            self.lb = (
+                [
+                    torch.cat([batch["cls"][batch["batch_idx"] == i], bboxes[batch["batch_idx"] == i]], dim=-1)
+                    for i in range(nb)
+                ]
+                if self.args.save_hybrid
+                else []
+            )  # for autolabelling
+
+        return batch
+
+    def crop_image_batch(self, batch, imgsz, step=0.9, batch_size=4):
+        offsets, img_slices = crop_images(batch['img'], (imgsz, imgsz), step)
+        start = 0
+        while True:
+            end = start + batch_size
+            # shape: (b, 2, 1)
+            offsets_batch = np.array(offsets[start:end])[..., np.newaxis]
+            offsets_batch = torch.from_numpy(offsets_batch).to(self.device)
+            img_batch = img_slices[start:end]
+            img_batch = torch.concat(img_batch, axis=0)
+            img_batch = img_batch.to(self.device)
+            img_batch = (img_batch.half() if self.args.half else img_batch.float()) / 255
+            yield offsets_batch, img_batch.to(self.device)
+
+            if end >= len(offsets):
+                break
+            start = end 
 
 

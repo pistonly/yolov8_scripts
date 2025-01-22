@@ -46,8 +46,8 @@ class YOLOv8:
 
         # Store the shape of the input for later use
         input_shape = self.model_inputs[0].shape
-        self.input_width = input_shape[2]
-        self.input_height = input_shape[3]
+        self.input_height = input_shape[2]
+        self.input_width = input_shape[3]
 
         # Generate a color palette for the classes
         self.color_palette = np.random.uniform(0, 255, size=(len(self.classes), 3))
@@ -138,7 +138,6 @@ class YOLOv8:
 
         # Transpose and squeeze the output to match the expected shape
         outputs = np.transpose(np.squeeze(output[0]))
-        import pdb; pdb.set_trace()
 
         # Get the number of rows in the outputs array
         rows = outputs.shape[0]
@@ -209,7 +208,6 @@ class YOLOv8:
 
         # Run inference using the preprocessed image data
         outputs = self.session.run(None, {self.model_inputs[0].name: img_data})
-        import pdb; pdb.set_trace()
         t2 = time.time()
 
         # Perform post-processing on the outputs to obtain output image.
